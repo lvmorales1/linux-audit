@@ -7,16 +7,37 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 WARNINGS=0
+FAILS=0
+OUTPUT=""
 
 ok()   { echo -e "  ${GREEN}[OK]${NC} $1"; }
 warn() { echo -e "  ${YELLOW}[WARN]${NC} $1"; WARNINGS=$((WARNINGS + 1)); }
-bad()  { echo -e "  ${RED}[FAIL]${NC} $1"; WARNINGS=$((WARNINGS + 1)); }
+bad()  { echo -e "  ${RED}[FAIL]${NC} $1"; FAILS=$((FAILS + 1)); }
 info() { echo -e "  ${BLUE}[INFO]${NC} $1"; }
 
 section() {
     echo
     echo -e "${BLUE}=== $1 ===${NC}"
 }
+
+usage() {
+    echo "Usage: $0 [-o file] [-h]"
+    echo "  -o file   save the report to a file"
+    echo "  -h        show this help"
+}
+
+while getopts "o:h" opt; do
+    case $opt in
+        o) OUTPUT="$OPTARG" ;;
+        h) usage; exit 0 ;;
+        *) usage; exit 1 ;;
+    esac
+done
+
+if [ -n "$OUTPUT" ]; then
+    mkdir -p "$(dirname "$OUTPUT")"
+    exec > >(tee >(sed -r 's/\x1b\[[0-9;]*m//g' > "$OUTPUT")) 2>&1
+fi
 
 if [ "$EUID" -ne 0 ]; then
     echo -e "${YELLOW}Not running as root, some checks may be incomplete.${NC}"
@@ -253,3 +274,12 @@ check_updates
 check_services
 check_firewall
 check_ssh
+
+section "Summary"
+echo -e "  ${RED}Failures: $FAILS${NC}"
+echo -e "  ${YELLOW}Warnings: $WARNINGS${NC}"
+[ -n "$OUTPUT" ] && echo "  Report saved to $OUTPUT"
+
+[ "$FAILS" -gt 0 ] && exit 2
+[ "$WARNINGS" -gt 0 ] && exit 1
+exit 0
