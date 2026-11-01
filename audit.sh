@@ -112,5 +112,44 @@ check_permissions() {
     done <<< "$suid_files"
 }
 
+check_updates() {
+    section "Updates"
+
+    if command -v apt >/dev/null; then
+        updates=$(apt list --upgradable 2>/dev/null | grep -v "^Listing")
+        security=$(echo "$updates" | grep -ci security)
+    elif command -v dnf >/dev/null; then
+        updates=$(dnf check-update -q 2>/dev/null | grep -v "^$")
+        security=$(dnf updateinfo list --security -q 2>/dev/null | grep -c .)
+    elif command -v pacman >/dev/null; then
+        if command -v checkupdates >/dev/null; then
+            updates=$(checkupdates 2>/dev/null)
+        else
+            updates=$(pacman -Qu 2>/dev/null)
+        fi
+    else
+        info "Unsupported package manager, skipping"
+        return
+    fi
+
+    count=$(echo "$updates" | grep -c .)
+    if [ "$count" -gt 0 ]; then
+        warn "$count packages can be updated"
+    else
+        ok "System is up to date"
+    fi
+
+    if [ -n "$security" ] && [ "$security" -gt 0 ]; then
+        bad "$security security updates pending"
+    fi
+
+    if [ -f /var/run/reboot-required ]; then
+        warn "A reboot is required to apply updates"
+    elif [ ! -d "/usr/lib/modules/$(uname -r)" ]; then
+        warn "Running kernel differs from installed one, reboot needed"
+    fi
+}
+
 check_users
 check_permissions
+check_updates
