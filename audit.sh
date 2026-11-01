@@ -127,6 +127,17 @@ check_updates() {
         else
             updates=$(pacman -Qu 2>/dev/null)
         fi
+        for helper in yay paru pikaur trizen; do
+            if command -v "$helper" >/dev/null; then
+                aur=$($helper -Qua 2>/dev/null | grep -c .)
+                if [ "$aur" -gt 0 ]; then
+                    warn "$aur AUR packages can be updated ($helper)"
+                else
+                    ok "AUR packages are up to date ($helper)"
+                fi
+                break
+            fi
+        done
     else
         info "Unsupported package manager, skipping"
         return
