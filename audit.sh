@@ -26,3 +26,40 @@ echo "Linux Security Audit"
 echo "Host: $(cat /etc/hostname 2>/dev/null || uname -n)"
 echo "Date: $(date)"
 echo "Kernel: $(uname -r)"
+
+check_users() {
+    section "Users"
+
+    root_users=$(awk -F: '$3 == 0 {print $1}' /etc/passwd)
+    for u in $root_users; do
+        if [ "$u" != "root" ]; then
+            bad "User '$u' has UID 0"
+        fi
+    done
+    [ "$root_users" = "root" ] && ok "Only root has UID 0"
+
+    if [ -r /etc/shadow ]; then
+        empty=$(awk -F: '$2 == "" {print $1}' /etc/shadow)
+        if [ -n "$empty" ]; then
+            for u in $empty; do
+                bad "User '$u' has an empty password"
+            done
+        else
+            ok "No users with empty passwords"
+        fi
+    else
+        info "Can't read /etc/shadow, skipping password check"
+    fi
+
+    login_users=$(awk -F: '$7 !~ /(nologin|false)$/ {print $1}' /etc/passwd)
+    info "Users with a login shell: $(echo $login_users | tr ' ' ',')"
+
+    for group in sudo wheel; do
+        members=$(getent group "$group" | cut -d: -f4)
+        if [ -n "$members" ]; then
+            info "Members of $group: $members"
+        fi
+    done
+}
+
+check_users
