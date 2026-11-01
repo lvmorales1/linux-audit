@@ -62,4 +62,55 @@ check_users() {
     done
 }
 
+check_permissions() {
+    section "File permissions"
+
+    for f in /etc/passwd /etc/group; do
+        perms=$(stat -c %a "$f")
+        if [ $((8#$perms & 8#022)) -ne 0 ]; then
+            bad "$f is writable by group/others ($perms)"
+        else
+            ok "$f permissions are fine ($perms)"
+        fi
+    done
+
+    for f in /etc/shadow /etc/gshadow /etc/sudoers; do
+        [ -e "$f" ] || continue
+        perms=$(stat -c %a "$f")
+        if [ $((8#$perms & 8#007)) -ne 0 ]; then
+            bad "$f is accessible by others ($perms)"
+        else
+            ok "$f permissions are fine ($perms)"
+        fi
+    done
+
+    if [ -d /tmp ] && [ ! -k /tmp ]; then
+        bad "/tmp doesn't have the sticky bit set"
+    else
+        ok "/tmp has the sticky bit set"
+    fi
+
+    ww=$(find /etc /usr /bin /sbin -xdev -type f -perm -0002 2>/dev/null)
+    if [ -n "$ww" ]; then
+        while read -r f; do
+            bad "World-writable file: $f"
+        done <<< "$ww"
+    else
+        ok "No world-writable files in system directories"
+    fi
+
+    known_suid="sudo su passwd chsh chfn newgrp gpasswd mount umount ping pkexec unix_chkpwd fusermount fusermount3 ssh-keysign Xorg.wrap dbus-daemon-launch-helper polkit-agent-helper-1 chage expiry newuidmap newgidmap sg chrome-sandbox"
+
+    suid_files=$(find / -xdev -type f -perm -4000 2>/dev/null)
+    info "Found $(echo "$suid_files" | grep -c .) SUID binaries"
+    while read -r f; do
+        [ -z "$f" ] && continue
+        name=$(basename "$f")
+        if ! echo " $known_suid " | grep -q " $name "; then
+            warn "Unusual SUID binary: $f"
+        fi
+    done <<< "$suid_files"
+}
+
 check_users
+check_permissions
