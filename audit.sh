@@ -161,6 +161,41 @@ check_updates() {
     fi
 }
 
+check_services() {
+    section "Services"
+
+    if ! command -v systemctl >/dev/null; then
+        info "systemd not found, skipping"
+        return
+    fi
+
+    running=$(systemctl list-units --type=service --state=running --no-legend --plain | awk '{print $1}')
+    info "$(echo "$running" | grep -c .) services running"
+
+    risky="telnet rsh rlogin rexec vsftpd proftpd tftp xinetd avahi-daemon cups rpcbind nfs-server smb snmpd"
+    for svc in $risky; do
+        if echo "$running" | grep -q "^$svc\.service"; then
+            warn "Potentially unnecessary service running: $svc"
+        fi
+    done
+
+    failed=$(systemctl list-units --type=service --state=failed --no-legend --plain | awk '{print $1}')
+    for svc in $failed; do
+        warn "Failed service: $svc"
+    done
+
+    if command -v ss >/dev/null; then
+        while read -r addr; do
+            case "$addr" in
+                127.*|\[::1\]*) ;;
+                0.0.0.0:*|\[::\]:*|\*:*) warn "TCP port open on all interfaces: $addr" ;;
+                *) info "TCP port listening: $addr" ;;
+            esac
+        done < <(ss -tlnH | awk '{print $4}' | sort -u)
+    fi
+}
+
 check_users
 check_permissions
 check_updates
+check_services
