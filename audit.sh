@@ -195,7 +195,61 @@ check_services() {
     fi
 }
 
+check_firewall() {
+    section "Firewall"
+
+    for fw in ufw firewalld nftables iptables; do
+        if systemctl is-active --quiet "$fw" 2>/dev/null; then
+            ok "Firewall active: $fw"
+            return
+        fi
+    done
+
+    bad "No active firewall found (ufw, firewalld, nftables, iptables)"
+}
+
+check_ssh() {
+    section "SSH"
+
+    if [ ! -f /etc/ssh/sshd_config ]; then
+        info "sshd not installed, skipping"
+        return
+    fi
+
+    if ! systemctl is-active --quiet sshd 2>/dev/null && ! systemctl is-active --quiet ssh 2>/dev/null; then
+        info "SSH server is not running"
+    fi
+
+    if [ "$EUID" -eq 0 ] && command -v sshd >/dev/null; then
+        config=$(sshd -T 2>/dev/null)
+    else
+        config=$(cat /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null | grep -v "^\s*#" | tr 'A-Z' 'a-z')
+    fi
+
+    root_login=$(echo "$config" | awk '$1 == "permitrootlogin" {print $2; exit}')
+    case "$root_login" in
+        yes) bad "PermitRootLogin is enabled" ;;
+        no) ok "Root login is disabled" ;;
+        *) warn "PermitRootLogin is '${root_login:-default}', consider setting it to no" ;;
+    esac
+
+    pass_auth=$(echo "$config" | awk '$1 == "passwordauthentication" {print $2; exit}')
+    if [ "$pass_auth" = "no" ]; then
+        ok "Password authentication is disabled"
+    else
+        warn "Password authentication is enabled, prefer key-based auth"
+    fi
+
+    empty=$(echo "$config" | awk '$1 == "permitemptypasswords" {print $2; exit}')
+    [ "$empty" = "yes" ] && bad "PermitEmptyPasswords is enabled"
+
+    port=$(echo "$config" | awk '$1 == "port" {print $2; exit}')
+    info "SSH port: ${port:-22}"
+}
+
 check_users
 check_permissions
 check_updates
 check_services
+check_firewall
+check_ssh
